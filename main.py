@@ -5,7 +5,7 @@ from utils.pdf_parsing import extract_pages
 
 app=FastAPI(title='SuperClaims processing pipeline')
 
-@app.post('/')
+@app.post('/api/process')
 async def insurance_claim(claim_id:str=Form(...),file:UploadFile=File(...)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail='File must be a PDF')

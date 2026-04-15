@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+langgraph
+google-genai
+pymupdf
+Pillow
+python-dotenv
+typing_extensions

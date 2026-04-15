@@ -18,6 +18,7 @@ DOC_TYPES = [
     "other",
 ]
 
+RETRYABLE_ERRORS = ("429", "500", "503", "quota", "rate")
 
 def safe_segregate(content, classified_pages, max_retries=3):
     for attempt in range(1, max_retries + 1):
@@ -28,9 +29,13 @@ def safe_segregate(content, classified_pages, max_retries=3):
             )
             return response
         except Exception as e:
-            wait = 15 * (2 ** (attempt - 1))  # 15s, 30s, 60s
+            error_msg = str(e).lower()
+            # BUG FIXED: was retrying ALL exceptions including auth/bad-request errors
+            # which will never succeed. Now only retries known transient errors.
+            if not any(code in error_msg for code in RETRYABLE_ERRORS):
+                raise
+            wait = 15 * (2 ** (attempt - 1))
             print(f"Attempt {attempt}/{max_retries} failed: {e}. Retrying in {wait}s...")
-            print(classified_pages)
             if attempt == max_retries:
                 raise RuntimeError(f"All {max_retries} attempts failed.") from e
             time.sleep(wait)
@@ -69,15 +74,16 @@ def core_segregation(page, classified_pages):
     else:
         image_bytes = base64.b64decode(page["image"])
         contents = [
+            prompt,
             types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
-            prompt
         ]
+
  
     response = safe_segregate(client,contents,classified_pages)
     
     result = response.text.strip().lower()
     if result not in DOC_TYPES:
-        return "others"
+        return "other"
     return result
 
 def segregation(pages):

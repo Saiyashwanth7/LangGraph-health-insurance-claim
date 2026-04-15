@@ -26,6 +26,6 @@ def extract_pages(pdf_source):
                 'image':page_image
             }
         )
-        doc.close()
+    doc.close()
     return pages
 

@@ -6,7 +6,15 @@ from agents.discharge_agent import extract_discharge_details
 from typing_extensions import TypedDict
 from typing import List, Dict
 from agents.aggregator import aggregate_results
-
+# Replace imports
+"""from mock_data import (
+    mock_segregation as segregation,
+    mock_id_agent as extract_id_details,
+    mock_discharge_agent as extract_discharge_details,
+    mock_bill_agent as extract_bill_details,
+    mock_aggregate as aggregate_results
+)
+"""
 class State(TypedDict):
     claim_id: str
     pages: List[Dict]
@@ -53,11 +61,20 @@ def create_graph():
     workflow.add_node("bill_agent_node",bill_agent_node)
     workflow.add_node("aggregator_node",aggregator_node)
     #Add edges
-    workflow.add_edge("segregation_node", "id_agent_node")
-    workflow.add_edge("id_agent_node", "discharge_agent_node")
-    workflow.add_edge("discharge_agent_node", "bill_agent_node")
-    workflow.add_edge("bill_agent_node", "aggregator_node")
-    workflow.add_edge("aggregator_node", END)
+    workflow.set_entry_point('segregation_node')
+    """workflow.add_edge("segregation_node","id_agent_node")
+    workflow.add_edge("segregation_node","discharge_agent_node")
+    workflow.add_edge("segregation_node","bill_agent_node")
+    workflow.add_edge("id_agent_node","aggregator_node")
+    workflow.add_edge("discharge_agent_node","aggregator_node")
+    workflow.add_edge("bill_agent_node","aggregator_node")
+    workflow.add_edge("aggregator_node",END)"""
+    workflow.add_edge("segregation_node","id_agent_node")
+    workflow.add_edge("id_agent_node","discharge_agent_node")
+    workflow.add_edge("discharge_agent_node","bill_agent_node")
+    workflow.add_edge("bill_agent_node","aggregator_node")
+    workflow.add_edge("aggregator_node",END)
+    
     
     #Compile the graph
     return workflow.compile()

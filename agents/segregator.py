@@ -1,8 +1,6 @@
-from PIL import Image
-import io
 import base64
 import time
-from utils.pdf_parsing import extract_pages
+from typing import Dict, List
 from google.genai import types
 from config.llm_setup import client
 
@@ -20,82 +18,84 @@ DOC_TYPES = [
 
 RETRYABLE_ERRORS = ("429", "500", "503", "quota", "rate")
 
-def safe_segregate(content, classified_pages, max_retries=3):
+
+def safe_segregate(content, max_retries: int = 3):
+    """
+    Calls LLM safely with retry logic.
+    """
     for attempt in range(1, max_retries + 1):
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-flash-lite",
                 contents=content
             )
-            return response
+            return response.text
+
         except Exception as e:
             error_msg = str(e).lower()
-            # BUG FIXED: was retrying ALL exceptions including auth/bad-request errors
-            # which will never succeed. Now only retries known transient errors.
+
+            # Only retry transient errors
             if not any(code in error_msg for code in RETRYABLE_ERRORS):
                 raise
-            wait = 15 * (2 ** (attempt - 1))
-            print(f"Attempt {attempt}/{max_retries} failed: {e}. Retrying in {wait}s...")
+
+            wait = 2 ** attempt  # exponential backoff (2s, 4s, 8s...)
+            print(f"[Retry {attempt}] Error: {e}. Retrying in {wait}s...")
+
             if attempt == max_retries:
                 raise RuntimeError(f"All {max_retries} attempts failed.") from e
+
             time.sleep(wait)
-                
-"""def safe_segregate(client,content,classified_pages):
-    while True:
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",  # or "gpt-4.1-mini"
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a strict document classifier. Respond with ONLY one label."
-                    },
-                    {
-                        "role": "user",
-                        "content": content
-                    }
-                ],
-                temperature=0
-            )
-            return response.choices[0].message.content
 
-        except Exception as e:
-            print("Exception occurred:", e)
-            print(classified_pages)
-            time.sleep(5)"""
 
-def core_segregation(page, classified_pages):
-    prompt = f"""Classify this Insurance document page into exactly one document type of below 9 document type: 
-    {','.join(DOC_TYPES)}
-    Respond with ONLY the document type, nothing else."""
-        
-    if page["text"].strip():
-        contents = prompt + "\n\n Page content:\n" + page["text"]
+def classify_page(page: Dict) -> str:
+    """
+    Classify a single page into one of DOC_TYPES.
+    """
+    prompt = f"""
+Classify this insurance document page into exactly one of the following types:
+{', '.join(DOC_TYPES)}
+
+Return ONLY the document type. No explanation.
+"""
+
+    # Prefer text; fallback to image only if text is empty
+    if page.get("text", "").strip():
+        content = prompt + "\n\nPage Content:\n" + page["text"]
     else:
-        image_bytes = base64.b64decode(page["image"])
-        contents = [
-            prompt,
-            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
-        ]
+        try:
+            image_bytes = base64.b64decode(page["image"])
+            content = [
+                prompt,
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+            ]
+        except Exception:
+            return "other"
 
- 
-    response = safe_segregate(client,contents,classified_pages)
-    
-    result = response.text.strip().lower()
-    if result not in DOC_TYPES:
+    try:
+        result = safe_segregate(content).strip().lower()
+        return result if result in DOC_TYPES else "other"
+    except Exception as e:
+        print(f"[Classification Error] Page {page.get('page_num')}: {e}")
         return "other"
-    return result
 
-def segregation(pages):
+
+def segregation(pages: List[Dict]) -> Dict[str, List[Dict]]:
+    """
+    Classify all pages into document types.
+    """
     classified_pages = {doc_type: [] for doc_type in DOC_TYPES}
+
     for page in pages:
-        doc_type = core_segregation(page,classified_pages)
+        doc_type = classify_page(page)
         classified_pages[doc_type].append(page)
         time.sleep(15)
     return classified_pages
 
-def mock_classify(page):
-    text = page["text"].lower()
+
+# ---------------- MOCK VERSION (for testing without LLM) ---------------- #
+
+def mock_classify(page: Dict) -> str:
+    text = page.get("text", "").lower()
 
     if "invoice" in text or "total amount" in text:
         return "itemized_bill"
@@ -106,9 +106,12 @@ def mock_classify(page):
     else:
         return "other"
 
-def mock_segregation(pages):
+
+def mock_segregation(pages: List[Dict]) -> Dict[str, List[Dict]]:
     classified_pages = {doc_type: [] for doc_type in DOC_TYPES}
+
     for page in pages:
         doc_type = mock_classify(page)
         classified_pages[doc_type].append(page)
+
     return classified_pages
